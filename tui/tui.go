@@ -64,6 +64,7 @@ const (
 type Model struct {
 	cfg        *config.Config
 	configPath string
+	version    string // 展示用版本号，如 "v0.1.0 build 20260731"
 
 	// 数据
 	usages  []*provider.Usage
@@ -86,14 +87,15 @@ type Model struct {
 	cfgSavedHint string // 保存提示
 }
 
-// New 创建 TUI Model。
-func New(cfg *config.Config, configPath string) Model {
+// New 创建 TUI Model。version 为展示用版本号字符串。
+func New(cfg *config.Config, configPath string, version string) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 
 	return Model{
 		cfg:        cfg,
 		configPath: configPath,
+		version:    version,
 		errors:     make(map[string]string),
 		pending:    make(map[string]bool),
 		spinner:    s,
@@ -233,7 +235,6 @@ func (m Model) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			entry.enabled = !entry.enabled
 			m.applyProviderToggle(entry)
 			m.cfgSavedHint = "已保存"
-			m.cfgCursor = m.cfgCursor // 保持光标
 		}
 	case "+", "=":
 		m.cfg.RefreshIntervalMinutes++
@@ -406,8 +407,11 @@ func (m Model) renderTitleBar() string {
 		refreshInfo = fmt.Sprintf("最后刷新: %s", m.lastRefresh.Format("15:04:05"))
 	}
 	interval := fmt.Sprintf("⏱%dmin", m.cfg.RefreshIntervalMinutes)
+	rightInfo := refreshInfo + "  " + interval
+	// 版本号靠最右，用最暗的颜色，不干扰主要信息
 	return styleTitle.Render("📊 AI 套餐余额监控") + "    " +
-		styleHelp.Render(refreshInfo+"  "+interval)
+		styleHelp.Render(rightInfo) + "  " +
+		styleHelp.Render(m.version)
 }
 
 // orderedProviderNames 返回按启用顺序排列的 provider 名称列表（含出错的）。

@@ -6,6 +6,10 @@
 *.dylib
 tokenmonitor
 
+# 构建输出目录（build.ps1 的产物）
+dist/
+*.zip
+
 # 测试产物
 *.test
 *.out

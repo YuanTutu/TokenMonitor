@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -15,7 +16,30 @@ import (
 	"tokenmonitor/tui"
 )
 
+// 版本信息，默认值用于 go run / 未注入 ldflags 的开发构建。
+// 正式发布时由构建脚本通过 -ldflags 注入：
+//   -X main.version=v0.1.0 -X main.buildDate=20260731
+var (
+	version   = "dev"
+	buildDate = "unknown"
+)
+
+// versionString 返回展示用的完整版本号，格式: vx.x.x build YYYYMMDD。
+func versionString() string {
+	return fmt.Sprintf("%s build %s", version, buildDate)
+}
+
 func main() {
+	// -v / --version 打印版本号后退出
+	showVersion := flag.Bool("version", false, "打印版本号并退出")
+	flag.BoolVar(showVersion, "v", false, "打印版本号并退出（简写）")
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("TokenMonitor " + versionString())
+		return
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ 加载配置失败: %v\n", err)
@@ -51,7 +75,7 @@ func main() {
 	}
 
 	// 启动 TUI
-	p := tea.NewProgram(tui.New(cfg, configPath), tea.WithAltScreen())
+	p := tea.NewProgram(tui.New(cfg, configPath, versionString()), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ 启动失败: %v\n", err)
 		os.Exit(1)

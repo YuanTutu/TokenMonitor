@@ -23,7 +23,7 @@ func TestRenderWithRealData(t *testing.T) {
 		t.Skip("未启用任何 provider，跳过")
 	}
 
-	m := New(cfg, "")
+	m := New(cfg, "", "test build 00000000")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
