@@ -135,6 +135,10 @@ func (n *Notifier) CheckAlerts(usages []*provider.Usage, pctThreshold, balThresh
 			if item.Format == provider.FormatText {
 				continue
 			}
+			// provider 显式标记不参与告警的明细条目（如 DeepSeek 赠送/充值余额），跳过
+			if item.NoAlert {
+				continue
+			}
 
 			key := u.ProviderName + "|" + item.Label
 			shouldAlert, msg := evaluateItem(item, pctThreshold, balThreshold)

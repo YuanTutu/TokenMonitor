@@ -235,3 +235,25 @@ func TestFormatAlertsEmpty(t *testing.T) {
 		t.Errorf("空事件应返回 nil，实际 %v", msgs)
 	}
 }
+
+// ── TestCheckAlertsNoAlert: NoAlert 标记的明细条目不告警 ──
+
+func TestCheckAlertsNoAlert(t *testing.T) {
+	n := New()
+	// 模拟 DeepSeek：总余额可告警(8<10触发)，赠送/充值余额 NoAlert 不告警
+	total := balanceItem("总余额", 8)
+	granted := balanceItem("赠送余额", 0)
+	granted.NoAlert = true
+	toppedUp := balanceItem("充值余额", 5)
+	toppedUp.NoAlert = true
+	u := usagesWith(total, granted, toppedUp)
+
+	events := n.CheckAlerts(u, 90, 10)
+	if len(events) != 1 {
+		t.Fatalf("NoAlert 条目不应告警，期望 1 条(仅总余额)，实际 %d", len(events))
+	}
+	if events[0].Label != "总余额" {
+		t.Errorf("应只告警总余额，实际 %q", events[0].Label)
+	}
+}
+

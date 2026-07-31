@@ -128,18 +128,21 @@ func (p *Provider) buildBalanceItems(usage *provider.Usage, r *balanceResponse) 
 				Used:   parseFloat(info.TotalBalance),
 				Format: provider.FormatCount,
 				Unit:   currency,
+				// 总余额是真正该监控低余额的条目
 			},
 			provider.UsageItem{
-				Label:  "赠送余额",
-				Used:   parseFloat(info.GrantedBalance),
-				Format: provider.FormatCount,
-				Unit:   currency,
+				Label:   "赠送余额",
+				Used:    parseFloat(info.GrantedBalance),
+				Format:  provider.FormatCount,
+				Unit:    currency,
+				NoAlert: true, // 赠送余额是总余额的构成明细，常为 0，单独告警会误报
 			},
 			provider.UsageItem{
-				Label:  "充值余额",
-				Used:   parseFloat(info.ToppedUpBalance),
-				Format: provider.FormatCount,
-				Unit:   currency,
+				Label:   "充值余额",
+				Used:    parseFloat(info.ToppedUpBalance),
+				Format:  provider.FormatCount,
+				Unit:    currency,
+				NoAlert: true, // 充值余额是总余额的构成明细，单独告警会误报
 			},
 		)
 	}

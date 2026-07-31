@@ -31,6 +31,10 @@ type UsageItem struct {
 	Format   Format     // 格式类型
 	Unit     string     // 计数单位，如 "次"、"积分"（百分比时为空）
 	ResetsAt *time.Time // 重置时间，nil 表示无固定重置时间
+	// NoAlert 为 true 时此条目不参与用量/余额不足告警。
+	// 用于排除明细类条目（如 DeepSeek 的"赠送余额/充值余额"，它们是"总余额"的构成，
+	// 单独告警会造成误报——赠送余额为 0 是常态）。
+	NoAlert bool
 }
 
 // Format 描述用量的展示格式。
