@@ -5,9 +5,11 @@
 *.so
 *.dylib
 tokenmonitor
+tokenmonitor-wails
 
-# 构建输出目录（build.ps1 的产物）
-dist/
+# Wails 构建产物
+build/bin/
+build/windows/installer/tmp/
 *.zip
 
 # 测试产物
@@ -33,6 +35,10 @@ desktop.ini
 
 # ZCode / Claude 会话文件
 .zcode/
+
+# 前端依赖与构建产物（由 npm install / wails build 生成）
+frontend/node_modules/
+frontend/dist/
 
 # 本地配置（配置在 ~/.tokenusage/ 下，不在项目目录）
 config.json

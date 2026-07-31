@@ -1,57 +1,51 @@
 # ============================================================
-# TokenMonitor - Build Script
+# TokenMonitor - Build Script (Wails)
 # ============================================================
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File .\build.ps1
-#   powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 0.2.0
+#   powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 1.0.0
 #
-# Default version 0.1.0, build date = today (YYYYMMDD).
-# Output goes to dist/ and is zipped for release.
+# Default version 1.0.0, build date = today (YYYYMMDD).
+# Output: build/bin/tokenmonitor.exe (single exe, frontend embedded).
 # ASCII-only to avoid PowerShell 5.1 encoding issues.
 # ============================================================
 
 param(
-    [string]$Version = "0.1.0",
-    [string]$BuildDate = (Get-Date -Format "yyyyMMdd")
+    [string]$Version = "1.0.0",
+    [string]$BuildDate = (Get-Date -Format "yyyyMMdd"),
+    [string]$ExeName = "tokenmonitor"
 )
 
 $ErrorActionPreference = "Stop"
 
 $VersionTag = "v$Version"
-$DistDir    = "$PSScriptRoot\dist"
-$ExeName    = "tokenmonitor.exe"
+$BuildDir   = "$PSScriptRoot\build\bin"
+$ExePath    = "$BuildDir\$ExeName.exe"
 $ZipName    = "TokenMonitor-$VersionTag-windows-amd64.zip"
 
-Write-Host "=== TokenMonitor Build ===" -ForegroundColor Cyan
+Write-Host "=== TokenMonitor Build (Wails) ===" -ForegroundColor Cyan
 Write-Host "Version:     $VersionTag" -ForegroundColor Yellow
 Write-Host "Build date:  $BuildDate" -ForegroundColor Yellow
 Write-Host "Target:      windows/amd64" -ForegroundColor Yellow
 
-# 1. Clean and create dist dir
-Write-Host "`n[1/4] Prepare output dir..." -ForegroundColor Yellow
-if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
-New-Item -ItemType Directory -Path $DistDir | Out-Null
-Write-Host "OK: $DistDir"
-
-# 2. Cross-compile windows/amd64 with ldflags injecting version + date
-Write-Host "`n[2/4] Compile (GOOS=windows GOARCH=amd64)..." -ForegroundColor Yellow
-$env:GOOS   = "windows"
-$env:GOARCH = "amd64"
-$env:CGO_ENABLED = "0"
-
-$ldflags = "-s -w -X main.version=$VersionTag -X main.buildDate=$BuildDate"
-$output  = "$DistDir\$ExeName"
-
-go build -ldflags $ldflags -o $output .
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "FAIL: build failed" -ForegroundColor Red
+# 1. Build via wails (compiles frontend + Go, embeds assets)
+Write-Host "`n[1/4] Wails build..." -ForegroundColor Yellow
+$ldflags = "-X main.version=$VersionTag -X main.buildDate=$BuildDate"
+# 直接调用（不用管道，避免 $LASTEXITCODE 被管道覆盖）
+& wails build -ldflags $ldflags -o "$ExeName.exe" 2>&1 | ForEach-Object {
+    if ($_ -match "Built '|Compiling application|Compiling frontend|Done|FAIL|Error") { Write-Host "  $_" }
+}
+# wails outputs to build/bin/<name>.exe；用产物存在性判断成功（管道会干扰 $LASTEXITCODE）
+$builtExe = "$BuildDir\$ExeName.exe"
+if (-not (Test-Path $builtExe)) {
+    Write-Host "FAIL: wails build failed (exe not found at $builtExe)" -ForegroundColor Red
     exit 1
 }
-Write-Host "OK: $output"
+Write-Host "OK: $builtExe"
 
-# 3. Verify version injection
-Write-Host "`n[3/4] Verify version injection..." -ForegroundColor Yellow
-$versionOut = (& $output -v)
+# 2. Verify version injection
+Write-Host "`n[2/4] Verify version injection..." -ForegroundColor Yellow
+$versionOut = (& $builtExe -v)
 Write-Host "  $versionOut"
 $expected = "TokenMonitor $VersionTag build $BuildDate"
 if ($versionOut -ne $expected) {
@@ -62,16 +56,19 @@ if ($versionOut -ne $expected) {
 }
 Write-Host "OK: version injected" -ForegroundColor Green
 
+# 3. Copy README into build dir for zipping
+Write-Host "`n[3/4] Prepare zip contents..." -ForegroundColor Yellow
+Copy-Item "$PSScriptRoot\README.md" "$BuildDir\README.md" -ErrorAction SilentlyContinue
+Write-Host "OK: README copied"
+
 # 4. Zip
 Write-Host "`n[4/4] Zip..." -ForegroundColor Yellow
-Copy-Item "$PSScriptRoot\README.md" "$DistDir\README.md" -ErrorAction SilentlyContinue
-
 $zipPath = "$PSScriptRoot\$ZipName"
 if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
-Compress-Archive -Path "$DistDir\$ExeName", "$DistDir\README.md" -DestinationPath $zipPath
+Compress-Archive -Path $builtExe, "$BuildDir\README.md" -DestinationPath $zipPath
 Write-Host "OK: $zipPath" -ForegroundColor Green
 
 Write-Host "`n=== Build Done ===" -ForegroundColor Green
-Write-Host "Exe:      $output" -ForegroundColor Cyan
+Write-Host "Exe:      $builtExe" -ForegroundColor Cyan
 Write-Host "Zip:      $zipPath" -ForegroundColor Cyan
 Write-Host "Version:  $VersionTag build $BuildDate" -ForegroundColor Cyan
