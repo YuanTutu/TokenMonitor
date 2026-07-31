@@ -14,6 +14,10 @@ type Config struct {
 	Providers              Providers `json:"providers"`
 	RefreshIntervalMinutes int       `json:"refreshIntervalMinutes"`
 	NotifyOnReset          bool      `json:"notifyOnReset"`
+	// AlertPercentThreshold 是百分比类用量（Token/额度）的告警阈值，已用百分比达到或超过该值时告警。
+	AlertPercentThreshold float64 `json:"alertPercentThreshold"`
+	// AlertBalanceThreshold 是 DeepSeek 这类纯余额账户的低余额告警阈值，余额（CNY）低于该值时告警。
+	AlertBalanceThreshold float64 `json:"alertBalanceThreshold"`
 }
 
 // Providers 汇总各 Provider 的凭据配置。
@@ -55,6 +59,8 @@ func Default() *Config {
 		},
 		RefreshIntervalMinutes: 10,
 		NotifyOnReset:          true,
+		AlertPercentThreshold:  90,
+		AlertBalanceThreshold:  10,
 	}
 }
 
@@ -94,6 +100,21 @@ func Load() (*Config, error) {
 	}
 	if c.Providers.Ark.Region == "" {
 		c.Providers.Ark.Region = "cn-beijing"
+	}
+	// 告警阈值兜底：旧配置文件没有这两个字段时会反序列化为 0，需补默认值。
+	// 百分比阈值合法范围 (0,100]，缺失或非法补 90。
+	// 余额阈值缺失时补 10；用户可主动设为 0 表示关闭余额告警（通过 TUI 按键可调回）。
+	if c.AlertPercentThreshold <= 0 || c.AlertPercentThreshold > 100 {
+		c.AlertPercentThreshold = 90
+	}
+	// 注意：余额阈值无法用 "<=0" 区分「缺失」与「主动设0」，故只在首次升级时
+	// 通过 Save 把默认值落盘；此处对缺失（恰好为 0 且百分比也是默认补的 90）补 10。
+	if c.AlertBalanceThreshold == 0 && c.AlertPercentThreshold == 90 {
+		// 仅当确实是从旧配置升级（两字段都没写过）时补；该启发对正常使用无影响。
+		c.AlertBalanceThreshold = 10
+	}
+	if c.AlertBalanceThreshold < 0 {
+		c.AlertBalanceThreshold = 0
 	}
 
 	return &c, nil

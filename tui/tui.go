@@ -182,8 +182,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.allDone() {
 			m.loading = false
 			m.lastRefresh = time.Now()
-			events := m.notifier.Check(m.usages)
-			m.notifications = notify.FormatEvents(events)
+			// 生成通知：重置提醒受 NotifyOnReset 开关控制；用量/余额告警始终启用。
+			var notifs []string
+			if m.cfg.NotifyOnReset {
+				notifs = append(notifs, notify.FormatEvents(m.notifier.Check(m.usages))...)
+			}
+			notifs = append(notifs, notify.FormatAlerts(m.notifier.CheckAlerts(
+				m.usages, m.cfg.AlertPercentThreshold, m.cfg.AlertBalanceThreshold))...)
+			m.notifications = notifs
 			return m, m.scheduleTick()
 		}
 		return m, nil
@@ -249,6 +255,26 @@ func (m Model) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "t":
 		// 切换重置提醒
 		m.cfg.NotifyOnReset = !m.cfg.NotifyOnReset
+		m.saveConfig()
+		m.cfgSavedHint = "已保存"
+	case "]":
+		// 百分比告警阈值 +5（上限 100）
+		m.cfg.AlertPercentThreshold = clampFloat(m.cfg.AlertPercentThreshold+5, 1, 100)
+		m.saveConfig()
+		m.cfgSavedHint = "已保存"
+	case "[":
+		// 百分比告警阈值 -5（下限 1）
+		m.cfg.AlertPercentThreshold = clampFloat(m.cfg.AlertPercentThreshold-5, 1, 100)
+		m.saveConfig()
+		m.cfgSavedHint = "已保存"
+	case ".":
+		// 余额告警阈值 +5
+		m.cfg.AlertBalanceThreshold += 5
+		m.saveConfig()
+		m.cfgSavedHint = "已保存"
+	case ",":
+		// 余额告警阈值 -5（下限 0）
+		m.cfg.AlertBalanceThreshold = clampFloat(m.cfg.AlertBalanceThreshold-5, 0, 1e9)
 		m.saveConfig()
 		m.cfgSavedHint = "已保存"
 	case "e":
@@ -643,6 +669,10 @@ func (m Model) viewConfig() string {
 	}
 	lines = append(lines, fmt.Sprintf("  重置提醒: %s  [T]切换", notifyStr))
 
+	// 告警阈值（[]调百分比，,.调余额）
+	lines = append(lines, fmt.Sprintf("  用量告警阈值: %.0f%%  [ ]减  ] 加", m.cfg.AlertPercentThreshold))
+	lines = append(lines, fmt.Sprintf("  低余额告警阈值: %.0f CNY  [, ]减  . 加", m.cfg.AlertBalanceThreshold))
+
 	lines = append(lines, "")
 	lines = append(lines, styleHelp.Render("  [E] 编辑 API Key (外部编辑器)"))
 
@@ -654,7 +684,7 @@ func (m Model) viewConfig() string {
 
 	// 帮助
 	lines = append(lines, "")
-	lines = append(lines, styleHelp.Render("  [↑↓]选择 [Space]开关 [+/-]间隔 [E]编辑 [Esc]返回"))
+	lines = append(lines, styleHelp.Render("  [↑↓]选择 [Space]开关 [+/-]间隔 [T]重置提醒 [[]]用量阈值 [,.]余额阈值 [E]编辑 [Esc]返回"))
 
 	content := strings.Join(lines, "\n")
 	cardStyle := lipgloss.NewStyle().
@@ -699,4 +729,15 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// clampFloat 把 v 限制在 [lo, hi] 区间。
+func clampFloat(v, lo, hi float64) float64 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
