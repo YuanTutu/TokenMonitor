@@ -32,3 +32,6 @@ desktop.ini
 
 # 本地配置（配置在 ~/.tokenusage/ 下，不在项目目录）
 config.json
+
+# 上传脚本（可能含 token，不提交；本地保留备用）
+upload-to-github.ps1
