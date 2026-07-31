@@ -1,0 +1,34 @@
+# 编译产物
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+tokenmonitor
+
+# 测试产物
+*.test
+*.out
+coverage.txt
+
+# Go 工作区文件
+go.work
+go.work.sum
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ZCode / Claude 会话文件
+.zcode/
+
+# 本地配置（配置在 ~/.tokenusage/ 下，不在项目目录）
+config.json
