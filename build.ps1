@@ -31,21 +31,36 @@ Write-Host "Target:      windows/amd64" -ForegroundColor Yellow
 # 1. Build via wails (compiles frontend + Go, embeds assets)
 Write-Host "`n[1/4] Wails build..." -ForegroundColor Yellow
 $ldflags = "-X main.version=$VersionTag -X main.buildDate=$BuildDate"
-# 直接调用（不用管道，避免 $LASTEXITCODE 被管道覆盖）
-& wails build -ldflags $ldflags -o "$ExeName.exe" 2>&1 | ForEach-Object {
-    if ($_ -match "Built '|Compiling application|Compiling frontend|Done|FAIL|Error") { Write-Host "  $_" }
-}
-# wails outputs to build/bin/<name>.exe；用产物存在性判断成功（管道会干扰 $LASTEXITCODE）
-$builtExe = "$BuildDir\$ExeName.exe"
-if (-not (Test-Path $builtExe)) {
-    Write-Host "FAIL: wails build failed (exe not found at $builtExe)" -ForegroundColor Red
-    exit 1
+# Capture output to a variable (avoid pipe, which breaks $LASTEXITCODE and scoping)
+$buildOutput = & wails build -ldflags $ldflags -o "$ExeName.exe" 2>&1
+$buildOutput | Where-Object { $_ -match "Built '|Compiling application|Compiling frontend|Done|FAIL|Error" } | ForEach-Object { Write-Host "  $_" }
+
+# wails outputs to build/bin/<name>.exe. Judge success by artifact existence.
+$builtExe = Join-Path $BuildDir "$ExeName.exe"
+Write-Host "  expect exe: $builtExe"
+if (-not (Test-Path -LiteralPath $builtExe)) {
+    # Fallback: wails sometimes names output per wails.json outputfilename; list build/bin
+    Write-Host "  expected exe not found, listing build/bin:" -ForegroundColor DarkGray
+    Get-ChildItem -LiteralPath $BuildDir -Filter "*.exe" | ForEach-Object { Write-Host "    found: $($_.Name)" }
+    $alt = Get-ChildItem -LiteralPath $BuildDir -Filter "*.exe" | Select-Object -First 1
+    if ($alt) {
+        # Rename to expected name
+        if ($alt.FullName -ne $builtExe) {
+            Move-Item -LiteralPath $alt.FullName -Destination $builtExe -Force
+            Write-Host "  renamed $($alt.Name) -> $ExeName.exe" -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Host "FAIL: wails build failed (no exe in $BuildDir)" -ForegroundColor Red
+        exit 1
+    }
 }
 Write-Host "OK: $builtExe"
 
 # 2. Verify version injection
 Write-Host "`n[2/4] Verify version injection..." -ForegroundColor Yellow
-$versionOut = (& $builtExe -v)
+# Wails apps may redirect stdout; use cmd /c to reliably capture -v output.
+$versionOut = (cmd /c "`"$builtExe`" -v" 2>&1) | Out-String
+$versionOut = $versionOut.Trim()
 Write-Host "  $versionOut"
 $expected = "TokenMonitor $VersionTag build $BuildDate"
 if ($versionOut -ne $expected) {
