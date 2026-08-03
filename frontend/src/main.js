@@ -40,6 +40,10 @@ function renderDashboard() {
     const r = state.refreshResponse;
     const app = document.getElementById('app');
 
+    // 保存滚动位置：innerHTML 重建会丢失 .content 的 scrollTop。
+    const prevContent = document.querySelector('.content');
+    const savedScrollTop = prevContent ? prevContent.scrollTop : 0;
+
     let cardsHtml = '';
     let notifHtml = '';
 
@@ -88,6 +92,12 @@ function renderDashboard() {
             </div>
         </div>
     `;
+
+    // 恢复滚动位置
+    const newContent = document.querySelector('.content');
+    if (newContent) {
+        newContent.scrollTop = savedScrollTop;
+    }
 }
 
 // 渲染单个 provider 卡片
@@ -178,6 +188,11 @@ function renderConfig() {
         document.getElementById('app').innerHTML = `<div class="state-msg">配置加载失败</div>`;
         return;
     }
+
+    // 保存滚动位置：innerHTML 重建会丢失 .content 的 scrollTop，
+    // 导致每次点 +/- 调整时 UI 抖动/下沉。渲染后恢复。
+    const prevContent = document.querySelector('.content');
+    const savedScrollTop = prevContent ? prevContent.scrollTop : 0;
 
     const providers = [
         { key: 'glm', name: '智谱 GLM', ...c.providers.glm, credField: 'glm' },
@@ -290,6 +305,12 @@ function renderConfig() {
             </div>
         </div>
     `;
+
+    // 恢复滚动位置（避免 innerHTML 重建后 UI 抖动/下沉）
+    const newContent = document.querySelector('.content');
+    if (newContent) {
+        newContent.scrollTop = savedScrollTop;
+    }
 }
 
 // ── 编辑 Key 模态框 ───────────────────────────────────
