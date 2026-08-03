@@ -20,6 +20,9 @@ export namespace main {
 	    glm: ProviderView;
 	    ark: ProviderView;
 	    deepseek: ProviderView;
+	    kimi: ProviderView;
+	    stepfun: ProviderView;
+	    minimax: ProviderView;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProvidersView(source);
@@ -30,6 +33,9 @@ export namespace main {
 	        this.glm = this.convertValues(source["glm"], ProviderView);
 	        this.ark = this.convertValues(source["ark"], ProviderView);
 	        this.deepseek = this.convertValues(source["deepseek"], ProviderView);
+	        this.kimi = this.convertValues(source["kimi"], ProviderView);
+	        this.stepfun = this.convertValues(source["stepfun"], ProviderView);
+	        this.minimax = this.convertValues(source["minimax"], ProviderView);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

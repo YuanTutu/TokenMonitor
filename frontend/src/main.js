@@ -198,6 +198,9 @@ function renderConfig() {
         { key: 'glm', name: '智谱 GLM', ...c.providers.glm, credField: 'glm' },
         { key: 'ark', name: '火山方舟', ...c.providers.ark, credField: 'ark', hasSecret: true },
         { key: 'deepseek', name: 'DeepSeek', ...c.providers.deepseek, credField: 'deepseek' },
+        { key: 'kimi', name: 'Kimi', ...c.providers.kimi, credField: 'kimi' },
+        { key: 'stepfun', name: 'StepFun', ...c.providers.stepfun, credField: 'stepfun' },
+        { key: 'minimax', name: 'MiniMax', ...c.providers.minimax, credField: 'minimax' },
     ];
 
     const providerRows = providers.map(p => {
@@ -322,6 +325,9 @@ function showEditKeyModal(credField) {
         'ark': '火山方舟 AccessKey ID',
         'ark_secret': '火山方舟 Secret Access Key',
         'deepseek': 'DeepSeek API Key',
+        'kimi': 'Kimi (Moonshot) API Key',
+        'stepfun': 'StepFun API Key',
+        'minimax': 'MiniMax Token Plan 订阅 Key',
     };
     const title = labels[credField] || '凭据';
 

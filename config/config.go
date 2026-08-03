@@ -25,6 +25,9 @@ type Providers struct {
 	GLM      ProvidersGLM      `json:"glm"`
 	Ark      ProvidersArk      `json:"ark"`
 	DeepSeek ProvidersDeepSeek `json:"deepseek"`
+	Kimi     ProvidersKimi     `json:"kimi"`
+	StepFun  ProvidersStepFun  `json:"stepfun"`
+	MiniMax  ProvidersMiniMax  `json:"minimax"`
 }
 
 // ProvidersGLM 是智谱 GLM 的凭据。
@@ -49,6 +52,27 @@ type ProvidersDeepSeek struct {
 	APIKey  string `json:"apiKey"`
 }
 
+// ProvidersKimi 是月之暗面 Kimi (Moonshot AI) 的凭据。
+// APIKey 用于查询余额（GET /v1/users/me/balance），Bearer 鉴权。
+type ProvidersKimi struct {
+	Enabled bool   `json:"enabled"`
+	APIKey  string `json:"apiKey"`
+}
+
+// ProvidersStepFun 是阶跃星辰 StepFun 的凭据。
+// APIKey 用于查询账户余额（GET /v1/accounts），Bearer 鉴权。
+type ProvidersStepFun struct {
+	Enabled bool   `json:"enabled"`
+	APIKey  string `json:"apiKey"`
+}
+
+// ProvidersMiniMax 是 MiniMax 的凭据。
+// APIKey 是 Token Plan 订阅 Key，用于查询套餐额度用量（GET /v1/token_plan/remains），Bearer 鉴权。
+type ProvidersMiniMax struct {
+	Enabled bool   `json:"enabled"`
+	APIKey  string `json:"apiKey"`
+}
+
 // Default 返回带默认值的初始配置。
 func Default() *Config {
 	return &Config{
@@ -56,6 +80,9 @@ func Default() *Config {
 			GLM:      ProvidersGLM{Enabled: false},
 			Ark:      ProvidersArk{Enabled: false, Region: "cn-beijing"},
 			DeepSeek: ProvidersDeepSeek{Enabled: false},
+			Kimi:     ProvidersKimi{Enabled: false},
+			StepFun:  ProvidersStepFun{Enabled: false},
+			MiniMax:  ProvidersMiniMax{Enabled: false},
 		},
 		RefreshIntervalMinutes: 10,
 		NotifyOnReset:          true,
@@ -149,5 +176,6 @@ func ConfigPath() (string, error) {
 
 // AnyEnabled 返回是否有任意 Provider 被启用。
 func (c *Config) AnyEnabled() bool {
-	return c.Providers.GLM.Enabled || c.Providers.Ark.Enabled || c.Providers.DeepSeek.Enabled
+	return c.Providers.GLM.Enabled || c.Providers.Ark.Enabled || c.Providers.DeepSeek.Enabled ||
+		c.Providers.Kimi.Enabled || c.Providers.StepFun.Enabled || c.Providers.MiniMax.Enabled
 }

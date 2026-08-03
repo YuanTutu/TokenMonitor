@@ -20,6 +20,9 @@ import (
 	"tokenmonitor/provider/ark"
 	"tokenmonitor/provider/deepseek"
 	"tokenmonitor/provider/glm"
+	"tokenmonitor/provider/kimi"
+	"tokenmonitor/provider/minimax"
+	"tokenmonitor/provider/stepfun"
 )
 
 // App 是 Wails 绑定的应用对象，前端通过它调用后端能力。
@@ -117,6 +120,21 @@ func (a *App) SaveProviderKey(providerKey, cred string) error {
 		cfg.Providers.DeepSeek.APIKey = cred
 		if cred != "" {
 			cfg.Providers.DeepSeek.Enabled = true
+		}
+	case "kimi":
+		cfg.Providers.Kimi.APIKey = cred
+		if cred != "" {
+			cfg.Providers.Kimi.Enabled = true
+		}
+	case "stepfun":
+		cfg.Providers.StepFun.APIKey = cred
+		if cred != "" {
+			cfg.Providers.StepFun.Enabled = true
+		}
+	case "minimax":
+		cfg.Providers.MiniMax.APIKey = cred
+		if cred != "" {
+			cfg.Providers.MiniMax.Enabled = true
 		}
 	default:
 		return fmt.Errorf("未知 provider: %s", providerKey)
@@ -254,6 +272,15 @@ func (a *App) RefreshAll() RefreshResponse {
 	if cfg.Providers.DeepSeek.Enabled {
 		providers = append(providers, pinfo{"DeepSeek", deepseek.New(cfg.Providers.DeepSeek)})
 	}
+	if cfg.Providers.Kimi.Enabled {
+		providers = append(providers, pinfo{"Kimi", kimi.New(cfg.Providers.Kimi)})
+	}
+	if cfg.Providers.StepFun.Enabled {
+		providers = append(providers, pinfo{"StepFun", stepfun.New(cfg.Providers.StepFun)})
+	}
+	if cfg.Providers.MiniMax.Enabled {
+		providers = append(providers, pinfo{"MiniMax", minimax.New(cfg.Providers.MiniMax)})
+	}
 
 	if len(providers) == 0 {
 		return RefreshResponse{Error: "未启用任何 provider"}
@@ -371,6 +398,9 @@ type ProvidersView struct {
 	GLM      ProviderView `json:"glm"`
 	Ark      ProviderView `json:"ark"`
 	DeepSeek ProviderView `json:"deepseek"`
+	Kimi     ProviderView `json:"kimi"`
+	StepFun  ProviderView `json:"stepfun"`
+	MiniMax  ProviderView `json:"minimax"`
 }
 
 // ProviderView 是单个 provider 的脱敏视图。
@@ -386,6 +416,9 @@ func toConfigView(cfg *config.Config) *ConfigView {
 			GLM:      toProviderView(cfg.Providers.GLM.Enabled, cfg.Providers.GLM.APIKey),
 			Ark:      toProviderView(cfg.Providers.Ark.Enabled, cfg.Providers.Ark.AccessKeyID),
 			DeepSeek: toProviderView(cfg.Providers.DeepSeek.Enabled, cfg.Providers.DeepSeek.APIKey),
+			Kimi:     toProviderView(cfg.Providers.Kimi.Enabled, cfg.Providers.Kimi.APIKey),
+			StepFun:  toProviderView(cfg.Providers.StepFun.Enabled, cfg.Providers.StepFun.APIKey),
+			MiniMax:  toProviderView(cfg.Providers.MiniMax.Enabled, cfg.Providers.MiniMax.APIKey),
 		},
 		RefreshIntervalMinutes: cfg.RefreshIntervalMinutes,
 		NotifyOnReset:          cfg.NotifyOnReset,
@@ -418,6 +451,9 @@ func applyConfigView(cfg *config.Config, view *ConfigView) {
 	cfg.Providers.GLM.Enabled = view.Providers.GLM.Enabled
 	cfg.Providers.Ark.Enabled = view.Providers.Ark.Enabled
 	cfg.Providers.DeepSeek.Enabled = view.Providers.DeepSeek.Enabled
+	cfg.Providers.Kimi.Enabled = view.Providers.Kimi.Enabled
+	cfg.Providers.StepFun.Enabled = view.Providers.StepFun.Enabled
+	cfg.Providers.MiniMax.Enabled = view.Providers.MiniMax.Enabled
 	cfg.RefreshIntervalMinutes = view.RefreshIntervalMinutes
 	cfg.NotifyOnReset = view.NotifyOnReset
 	cfg.AlertPercentThreshold = view.AlertPercentThreshold
