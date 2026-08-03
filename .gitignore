@@ -12,6 +12,9 @@ build/bin/
 build/windows/installer/tmp/
 *.zip
 
+# 解压出的发布包目录（勿提交）
+TokenMonitor-*/
+
 # 测试产物
 *.test
 *.out
