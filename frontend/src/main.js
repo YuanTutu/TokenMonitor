@@ -34,9 +34,31 @@ function showToast(msg, type = '') {
     setTimeout(() => el.remove(), 2500);
 }
 
+// bindCardTilt 给所有卡片绑定 hover 3D 倾斜效果。
+// 鼠标在卡片内移动时，按相对位置计算 rotateX/rotateY（最大 ±4°），
+// 通过 CSS 变量 --tilt-x/--tilt-y 驱动 .card-inner-3d 的 transform。
+const MAX_TILT = 4;
+
+function bindCardTilt() {
+    document.querySelectorAll('.card').forEach(card => {
+        // 避免重复绑定（DOM 重建后是新元素，无需解绑）
+        card.addEventListener('mousemove', (e) => {
+            const rect = card.getBoundingClientRect();
+            const x = (e.clientX - rect.left) / rect.width - 0.5;   // -0.5 ~ 0.5
+            const y = (e.clientY - rect.top) / rect.height - 0.5;
+            card.style.setProperty('--tilt-x', (x * MAX_TILT).toFixed(2) + 'deg');
+            card.style.setProperty('--tilt-y', (-y * MAX_TILT).toFixed(2) + 'deg');
+        });
+        card.addEventListener('mouseleave', () => {
+            card.style.setProperty('--tilt-x', '0deg');
+            card.style.setProperty('--tilt-y', '0deg');
+        });
+    });
+}
+
 // ── 主面板渲染 ────────────────────────────────────────
 
-function renderDashboard() {
+function renderDashboard(animate = false) {
     const r = state.refreshResponse;
     const app = document.getElementById('app');
 
@@ -67,6 +89,8 @@ function renderDashboard() {
             `</div>`;
     }
 
+    // animate=true（视图切换）时容器带 .anim-in 触发入场动画；
+    // 数据刷新/交互更新不播动画，避免整页"刷新感"。
     app.innerHTML = `
         <div class="topbar">
             <div class="topbar-left">
@@ -85,7 +109,7 @@ function renderDashboard() {
                 </div>
             </div>
         </div>
-        <div class="content">
+        <div class="content${animate ? ' anim-in' : ''}">
             <div class="content-inner">
                 ${notifHtml}
                 ${cardsHtml}
@@ -98,9 +122,11 @@ function renderDashboard() {
     if (newContent) {
         newContent.scrollTop = savedScrollTop;
     }
+    // 绑定卡片 hover 3D 倾斜
+    bindCardTilt();
 }
 
-// 渲染单个 provider 卡片
+// 渲染单个 provider 卡片。
 function renderCard(result) {
     const title = result.providerName;
     const plan = result.plan ? `<span class="card-plan">${result.plan}</span>` : '';
@@ -108,10 +134,12 @@ function renderCard(result) {
     if (result.error) {
         return `
             <div class="card">
-                <div class="card-header">
-                    <div><span class="card-title">${title}</span>${plan}</div>
+                <div class="card-inner-3d">
+                    <div class="card-header">
+                        <div><span class="card-title">${title}</span>${plan}</div>
+                    </div>
+                    <div class="card-error">❌ ${result.error}</div>
                 </div>
-                <div class="card-error">❌ ${result.error}</div>
             </div>
         `;
     }
@@ -120,11 +148,13 @@ function renderCard(result) {
 
     return `
         <div class="card">
-            <div class="card-header">
-                <div><span class="card-title">${title}</span>${plan}</div>
-                <span class="card-updated">${result.updatedAt ? new Date(result.updatedAt).toLocaleTimeString('zh-CN') : ''}</span>
+            <div class="card-inner-3d">
+                <div class="card-header">
+                    <div><span class="card-title">${title}</span>${plan}</div>
+                    <span class="card-updated">${result.updatedAt ? new Date(result.updatedAt).toLocaleTimeString('zh-CN') : ''}</span>
+                </div>
+                ${itemsHtml}
             </div>
-            ${itemsHtml}
         </div>
     `;
 }
@@ -182,7 +212,7 @@ function renderItem(item) {
 
 // ── 配置页渲染 ────────────────────────────────────────
 
-function renderConfig() {
+function renderConfig(animate = false) {
     const c = state.config;
     if (!c) {
         document.getElementById('app').innerHTML = `<div class="state-msg">配置加载失败</div>`;
@@ -251,7 +281,7 @@ function renderConfig() {
                 </div>
             </div>
         </div>
-        <div class="content">
+        <div class="content${animate ? ' anim-in' : ''}">
             <div class="content-inner">
                 <div class="config-section">
                     <div class="config-section-title">Provider 凭据</div>
@@ -379,12 +409,12 @@ window.refresh = async function() {
 window.showConfig = async function() {
     state.view = 'config';
     state.config = await LoadConfig();
-    renderConfig();
+    renderConfig(true); // 视图切换：播入场动画
 };
 
 window.showDashboard = function() {
     state.view = 'dashboard';
-    renderDashboard();
+    renderDashboard(true); // 视图切换：播入场动画
 };
 
 window.toggleProvider = async function(key) {
@@ -485,10 +515,22 @@ function scheduleRefresh() {
 
 // ── 初始化 ────────────────────────────────────────────
 
+// ensureBgGlow 一次性创建背景光斑层（挂在 body 下、#app 之外）。
+// 光斑动画永续播放，不受视图渲染重建 DOM 影响，避免"刷新闪动"。
+function ensureBgGlow() {
+    if (document.querySelector('.bg-glow')) return;
+    ['g1', 'g2', 'g3'].forEach(cls => {
+        const el = document.createElement('div');
+        el.className = `bg-glow ${cls}`;
+        document.body.appendChild(el);
+    });
+}
+
 async function init() {
+    ensureBgGlow();
     state.version = await GetVersion().catch(() => 'dev');
     state.config = await LoadConfig().catch(() => null);
-    renderDashboard();
+    renderDashboard(true); // 首次进入播入场动画
     // 首次自动刷新
     window.refresh();
 }
