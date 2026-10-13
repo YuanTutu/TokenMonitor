@@ -1,9 +1,12 @@
-// Package kimi 实现月之暗面 Kimi (Moonshot AI) 账户余额查询。
+// Package kimi 实现 Kimi For Coding（Coding Plan）套餐额度用量查询。
 //
-// 余额查询: GET https://api.moonshot.cn/v1/users/me/balance
-//   鉴权: Authorization: Bearer <API Key>
+// 用量查询: GET https://api.kimi.com/coding/v1/usages
+//   鉴权: Authorization: Bearer <sk-kimi-...>
 //
-// Kimi 是纯 API 按量付费，无套餐额度。响应结构类似 DeepSeek 但字段为数值型。
+// 注意：Kimi 开放平台（api.moonshot.cn，按量付费）与 Kimi For Coding
+// （api.kimi.com/coding，订阅套餐）是两套独立体系。Coding Plan 的
+// sk-kimi- key 在开放平台接口上必然 401，须走本接口。
+// 官方要求不要篡改 User-Agent（视为违规）。
 package kimi
 
 import (
@@ -19,26 +22,42 @@ import (
 )
 
 const (
-	// balanceURL 查询账户余额（用 API Key 鉴权）。
-	balanceURL = "https://api.moonshot.cn/v1/users/me/balance"
+	// usagesURL 查询 Coding Plan 套餐额度用量（用 sk-kimi- 订阅 Key 鉴权）。
+	usagesURL = "https://api.kimi.com/coding/v1/usages"
 	// requestTimeout 单次请求超时。
 	requestTimeout = 15 * time.Second
 )
 
-// balanceResponse 是 /v1/users/me/balance 端点的响应。
-type balanceResponse struct {
-	Code int          `json:"code"`
-	Data balanceData  `json:"data"`
+// usagesResponse 是 /coding/v1/usages 端点的响应。
+// 字段为多层嵌套结构，注意 detail 里的 limit/used/remaining 是字符串类型。
+type usagesResponse struct {
+	// Limits 是 5 小时滚动窗口配额列表（多数套餐只有 1 项）。
+	Limits []limitWindow `json:"limits"`
+	// Usages 是各周期用量比例（0-1）。
+	Usages map[string]usageRatio `json:"usages"`
 }
 
-// balanceData 是响应的 data 字段，含三类余额。
-type balanceData struct {
-	AvailableBalance float64 `json:"available_balance"` // 可用余额（现金+代金券）
-	VoucherBalance   float64 `json:"voucher_balance"`   // 代金券余额
-	CashBalance      float64 `json:"cash_balance"`      // 现金余额（可为负=欠费）
+// limitWindow 是一个 5 小时窗口的配额明细。
+type limitWindow struct {
+	Window struct {
+		Duration int64  `json:"duration"` // 窗口时长（分钟），300=5h
+		TimeUnit string `json:"timeUnit"`
+	} `json:"window"`
+	Detail struct {
+		Limit     string `json:"limit"`     // 总配额（字符串）
+		Used      string `json:"used"`      // 已用（字符串）
+		Remaining string `json:"remaining"` // 剩余（字符串）
+		ResetTime string `json:"resetTime"` // 重置时间（RFC3339）
+	} `json:"detail"`
 }
 
-// Provider Kimi 账户余额查询。
+// usageRatio 是某个周期的用量比例。
+type usageRatio struct {
+	UsedRatio float64 `json:"used_ratio"` // 已用比例 0-1
+	ResetTime string  `json:"reset_time"` // 重置时间（RFC3339）
+}
+
+// Provider Kimi For Coding 套餐额度查询。
 type Provider struct {
 	apiKey string
 }
@@ -53,29 +72,30 @@ func (p *Provider) Name() string {
 	return "Kimi"
 }
 
-// Query 查询账户余额。
+// Query 查询套餐额度用量。
 func (p *Provider) Query(ctx context.Context) (*provider.Usage, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
 	usage := &provider.Usage{
 		ProviderName: p.Name(),
-		Plan:         "API 按量付费",
+		Plan:         "Coding Plan",
 		UpdatedAt:    time.Now(),
 	}
 
-	balance, err := p.getBalance(ctx)
+	resp, err := p.getUsages(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("查询余额失败: %w", err)
+		return nil, fmt.Errorf("查询用量失败: %w", err)
 	}
-	p.buildBalanceItems(usage, balance)
+	p.buildUsage(usage, resp)
 
 	return usage, nil
 }
 
-// getBalance 调用余额查询接口。
-func (p *Provider) getBalance(ctx context.Context) (*balanceResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, balanceURL, nil)
+// getUsages 调用 /coding/v1/usages 查询套餐额度用量。
+// 注意不设置 User-Agent（官方要求保持真实客户端标识，不要篡改）。
+func (p *Provider) getUsages(ctx context.Context) (*usagesResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, usagesURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("构建请求失败: %w", err)
 	}
@@ -97,39 +117,86 @@ func (p *Provider) getBalance(ctx context.Context) (*balanceResponse, error) {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(body), 200))
 	}
 
-	var result balanceResponse
+	var result usagesResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w (body: %s)", err, truncate(string(body), 200))
 	}
 	return &result, nil
 }
 
-// buildBalanceItems 将余额数据追加到 Usage。
-// available_balance 是真正该监控低余额的条目；代金券/现金是构成明细，设 NoAlert。
-func (p *Provider) buildBalanceItems(usage *provider.Usage, r *balanceResponse) {
-	usage.Items = append(usage.Items,
-		provider.UsageItem{
-			Label:  "可用余额",
-			Used:   r.Data.AvailableBalance,
-			Format: provider.FormatCount,
-			Unit:   "CNY",
-			// 可用余额参与低余额告警（Used < 阈值时触发）
-		},
-		provider.UsageItem{
-			Label:   "代金券余额",
-			Used:    r.Data.VoucherBalance,
-			Format:  provider.FormatCount,
-			Unit:    "CNY",
-			NoAlert: true, // 代金券是可用余额的构成明细，单独告警会误报
-		},
-		provider.UsageItem{
-			Label:   "现金余额",
-			Used:    r.Data.CashBalance,
-			Format:  provider.FormatCount,
-			Unit:    "CNY",
-			NoAlert: true, // 现金是可用余额的构成明细，单独告警会误报
-		},
-	)
+// buildUsage 将响应映射为标准化 Usage。
+// 产出三条百分比条目：5h 窗口额度 / 月度总量 / 月度 Code。
+func (p *Provider) buildUsage(usage *provider.Usage, r *usagesResponse) {
+	// 1. 5h 窗口额度：优先用 limits[] 的精确数字，回退 usages.limit_5h 的比例
+	if len(r.Limits) > 0 {
+		d := r.Limits[0].Detail
+		pct := calcPercent(d.Used, d.Limit)
+		usage.Items = append(usage.Items, provider.UsageItem{
+			Label:    "5h 窗口额度",
+			Used:     pct,
+			Limit:    100,
+			Format:   provider.FormatPercent,
+			ResetsAt: parseRFC3339(d.ResetTime),
+		})
+	} else if u, ok := r.Usages["limit_5h"]; ok {
+		usage.Items = append(usage.Items, provider.UsageItem{
+			Label:    "5h 窗口额度",
+			Used:     u.UsedRatio * 100,
+			Limit:    100,
+			Format:   provider.FormatPercent,
+			ResetsAt: parseRFC3339(u.ResetTime),
+		})
+	}
+
+	// 2. 月度总量
+	if u, ok := r.Usages["limit_month_total"]; ok {
+		usage.Items = append(usage.Items, provider.UsageItem{
+			Label:    "月度总量",
+			Used:     u.UsedRatio * 100,
+			Limit:    100,
+			Format:   provider.FormatPercent,
+			ResetsAt: parseRFC3339(u.ResetTime),
+		})
+	}
+
+	// 3. 月度 Code
+	if u, ok := r.Usages["limit_month_code"]; ok {
+		usage.Items = append(usage.Items, provider.UsageItem{
+			Label:    "月度 Code",
+			Used:     u.UsedRatio * 100,
+			Limit:    100,
+			Format:   provider.FormatPercent,
+			ResetsAt: parseRFC3339(u.ResetTime),
+		})
+	}
+}
+
+// calcPercent 计算已用百分比（used/limit*100），limit 无效时返回 0。
+func calcPercent(used, limit string) float64 {
+	l := parseFloat(limit)
+	if l <= 0 {
+		return 0
+	}
+	return parseFloat(used) / l * 100
+}
+
+// parseFloat 解析字符串形式的数字为 float64。
+func parseFloat(s string) float64 {
+	var f float64
+	fmt.Sscanf(s, "%f", &f)
+	return f
+}
+
+// parseRFC3339 解析 RFC3339 时间字符串；失败返回 nil。
+func parseRFC3339(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return nil
+	}
+	return &t
 }
 
 // truncate 截断字符串到 maxLen，超出加省略号。

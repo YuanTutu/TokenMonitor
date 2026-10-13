@@ -14,10 +14,19 @@ type Config struct {
 	Providers              Providers `json:"providers"`
 	RefreshIntervalMinutes int       `json:"refreshIntervalMinutes"`
 	NotifyOnReset          bool      `json:"notifyOnReset"`
+	// NotifyOnAlert 控制用量/余额告警是否发送弹窗通知。关闭后仍生成告警并展示在
+	// 界面通知区，但不弹应用内对话框和系统通知。
+	// 用指针区分"旧配置缺失字段（nil，补默认 true）"和"用户主动关闭（false）"。
+	NotifyOnAlert *bool `json:"notifyOnAlert"`
 	// AlertPercentThreshold 是百分比类用量（Token/额度）的告警阈值，已用百分比达到或超过该值时告警。
 	AlertPercentThreshold float64 `json:"alertPercentThreshold"`
 	// AlertBalanceThreshold 是 DeepSeek 这类纯余额账户的低余额告警阈值，余额（CNY）低于该值时告警。
 	AlertBalanceThreshold float64 `json:"alertBalanceThreshold"`
+	// Theme 是界面主题："glass"（液态玻璃，默认）或 "terminal"（终端美学）。
+	Theme string `json:"theme"`
+	// ProviderOrder 是 provider 卡片的展示顺序（key 列表，如 ["glm","kimi",...]）。
+	// 缺失或含未知 key 时在 Load 中补齐为默认顺序。
+	ProviderOrder []string `json:"providerOrder"`
 }
 
 // Providers 汇总各 Provider 的凭据配置。
@@ -86,9 +95,50 @@ func Default() *Config {
 		},
 		RefreshIntervalMinutes: 10,
 		NotifyOnReset:          true,
+		NotifyOnAlert:          boolPtr(true),
 		AlertPercentThreshold:  90,
 		AlertBalanceThreshold:  10,
+		Theme:                  "glass",
+		ProviderOrder:          DefaultProviderOrder(),
 	}
+}
+
+// DefaultProviderOrder 返回默认的 provider 展示顺序。
+func DefaultProviderOrder() []string {
+	return []string{"glm", "ark", "deepseek", "kimi", "stepfun", "minimax"}
+}
+
+// boolPtr 返回 bool 的指针，用于区分 JSON 缺失字段与显式 false。
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+// normalizeOrder 规范化 provider 排序：保留用户顺序中的合法 key（去重），
+// 缺失的 provider key 补到末尾（按默认顺序）。
+func normalizeOrder(order []string) []string {
+	valid := make(map[string]bool)
+	for _, k := range DefaultProviderOrder() {
+		valid[k] = true
+	}
+	seen := make(map[string]bool)
+	result := make([]string, 0, len(valid))
+	for _, k := range order {
+		if valid[k] && !seen[k] {
+			seen[k] = true
+			result = append(result, k)
+		}
+	}
+	for _, k := range DefaultProviderOrder() {
+		if !seen[k] {
+			result = append(result, k)
+		}
+	}
+	return result
+}
+
+// NotifyAlertEnabled 返回告警弹窗是否开启（nil 视为开启）。
+func (c *Config) NotifyAlertEnabled() bool {
+	return c.NotifyOnAlert == nil || *c.NotifyOnAlert
 }
 
 // configPath 返回配置文件的绝对路径: ~/.tokenusage/config.json。
@@ -143,6 +193,12 @@ func Load() (*Config, error) {
 	if c.AlertBalanceThreshold < 0 {
 		c.AlertBalanceThreshold = 0
 	}
+	// 主题兜底：缺失或非法值补 "glass"
+	if c.Theme != "glass" && c.Theme != "terminal" {
+		c.Theme = "glass"
+	}
+	// 排序兜底：保留用户顺序中的合法 key，去除重复/未知，缺失的补到末尾
+	c.ProviderOrder = normalizeOrder(c.ProviderOrder)
 
 	return &c, nil
 }

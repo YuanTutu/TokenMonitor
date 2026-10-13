@@ -257,29 +257,36 @@ func (a *App) RefreshAll() RefreshResponse {
 	}
 	a.cfg = cfg
 
-	// 构造 provider 实例列表
+	// 构造 provider 实例列表（按用户配置的 ProviderOrder 顺序）
 	type pinfo struct {
+		key  string
 		name string
 		p    provider.Provider
 	}
-	var providers []pinfo
+	allProviders := map[string]pinfo{}
 	if cfg.Providers.GLM.Enabled {
-		providers = append(providers, pinfo{"智谱 GLM", glm.New(cfg.Providers.GLM)})
+		allProviders["glm"] = pinfo{"glm", "智谱 GLM", glm.New(cfg.Providers.GLM)}
 	}
 	if cfg.Providers.Ark.Enabled {
-		providers = append(providers, pinfo{"火山方舟", ark.New(cfg.Providers.Ark)})
+		allProviders["ark"] = pinfo{"ark", "火山方舟", ark.New(cfg.Providers.Ark)}
 	}
 	if cfg.Providers.DeepSeek.Enabled {
-		providers = append(providers, pinfo{"DeepSeek", deepseek.New(cfg.Providers.DeepSeek)})
+		allProviders["deepseek"] = pinfo{"deepseek", "DeepSeek", deepseek.New(cfg.Providers.DeepSeek)}
 	}
 	if cfg.Providers.Kimi.Enabled {
-		providers = append(providers, pinfo{"Kimi", kimi.New(cfg.Providers.Kimi)})
+		allProviders["kimi"] = pinfo{"kimi", "Kimi", kimi.New(cfg.Providers.Kimi)}
 	}
 	if cfg.Providers.StepFun.Enabled {
-		providers = append(providers, pinfo{"StepFun", stepfun.New(cfg.Providers.StepFun)})
+		allProviders["stepfun"] = pinfo{"stepfun", "StepFun", stepfun.New(cfg.Providers.StepFun)}
 	}
 	if cfg.Providers.MiniMax.Enabled {
-		providers = append(providers, pinfo{"MiniMax", minimax.New(cfg.Providers.MiniMax)})
+		allProviders["minimax"] = pinfo{"minimax", "MiniMax", minimax.New(cfg.Providers.MiniMax)}
+	}
+	var providers []pinfo
+	for _, key := range cfg.ProviderOrder {
+		if p, ok := allProviders[key]; ok {
+			providers = append(providers, p)
+		}
 	}
 
 	if len(providers) == 0 {
@@ -317,27 +324,41 @@ func (a *App) RefreshAll() RefreshResponse {
 		}
 	}
 
-	// 生成通知：重置提醒受开关控制，告警始终启用
-	var notifs []string
+	// 生成通知：重置提醒受 NotifyOnReset 开关控制，用量/余额告警受 NotifyOnAlert 开关控制。
+	// 告警事件始终检测并展示在界面通知区；开关只控制是否弹窗（对话框/系统通知）。
+	var resetNotifs, alertNotifs []string
 	if cfg.NotifyOnReset {
-		notifs = append(notifs, notify.FormatEvents(a.notifier.Check(usages))...)
+		resetNotifs = notify.FormatEvents(a.notifier.Check(usages))
+	} else {
+		// 开关关闭时仍检测（维护去重状态），只是不展示
+		a.notifier.Check(usages)
 	}
-	notifs = append(notifs, notify.FormatAlerts(a.notifier.CheckAlerts(
-		usages, cfg.AlertPercentThreshold, cfg.AlertBalanceThreshold))...)
+	alertNotifs = notify.FormatAlerts(a.notifier.CheckAlerts(
+		usages, cfg.AlertPercentThreshold, cfg.AlertBalanceThreshold))
 
-	// 系统通知：notifier 的 Check/CheckAlerts 已做去重（越过提醒一次、回落清除），
-	// 所以这里 notifs 里的都是"本次新产生"的。
-	// 双通道通知：① 应用内模态对话框（MessageDialog，走 WebView2 最可靠）
-	//            ② Windows Toast（beeep，后台轻提示，失败不影响主流程）
-	if len(notifs) > 0 {
-		notifsCopy := notifs // 避免闭包捕获迭代变量
+	// 界面通知区展示（告警始终展示；重置仅在开关开启时展示）
+	notifs := append(append([]string{}, resetNotifs...), alertNotifs...)
+
+	// 弹窗通知（各自开关控制各自的弹窗）：
+	//   ① 应用内模态对话框（MessageDialog，走 WebView2 最可靠）
+	//   ② Windows Toast（beeep，后台轻提示，失败不影响主流程）
+	// notifier 已去重（越过提醒一次、回落清除），此处的都是"本次新产生"的。
+	var popupNotifs []string
+	if cfg.NotifyOnReset {
+		popupNotifs = append(popupNotifs, resetNotifs...)
+	}
+	if cfg.NotifyAlertEnabled() {
+		popupNotifs = append(popupNotifs, alertNotifs...)
+	}
+	if len(popupNotifs) > 0 {
+		popupCopy := popupNotifs // 避免闭包捕获迭代变量
 		go func() {
 			// Toast 通知（后台轻提示，失败静默）
-			_ = a.NotifyAlerts(notifsCopy)
+			_ = a.NotifyAlerts(popupCopy)
 		}()
 		// 应用内对话框（可靠，会弹到应用窗口前）。
 		// 用 goroutine 避免阻塞刷新返回；MessageDialog 会抢焦点提示用户。
-		go a.showAlertDialog(notifsCopy)
+		go a.showAlertDialog(popupCopy)
 	}
 
 	return RefreshResponse{
@@ -389,8 +410,11 @@ type ConfigView struct {
 	Providers              ProvidersView `json:"providers"`
 	RefreshIntervalMinutes int           `json:"refreshIntervalMinutes"`
 	NotifyOnReset          bool          `json:"notifyOnReset"`
+	NotifyOnAlert          bool          `json:"notifyOnAlert"`
 	AlertPercentThreshold  float64       `json:"alertPercentThreshold"`
 	AlertBalanceThreshold  float64       `json:"alertBalanceThreshold"`
+	Theme                  string        `json:"theme"`
+	ProviderOrder          []string      `json:"providerOrder"`
 }
 
 // ProvidersView 是各 provider 的脱敏视图。
@@ -422,8 +446,11 @@ func toConfigView(cfg *config.Config) *ConfigView {
 		},
 		RefreshIntervalMinutes: cfg.RefreshIntervalMinutes,
 		NotifyOnReset:          cfg.NotifyOnReset,
+		NotifyOnAlert:          cfg.NotifyAlertEnabled(),
 		AlertPercentThreshold:  cfg.AlertPercentThreshold,
 		AlertBalanceThreshold:  cfg.AlertBalanceThreshold,
+		Theme:                  cfg.Theme,
+		ProviderOrder:          cfg.ProviderOrder,
 	}
 }
 
@@ -456,6 +483,11 @@ func applyConfigView(cfg *config.Config, view *ConfigView) {
 	cfg.Providers.MiniMax.Enabled = view.Providers.MiniMax.Enabled
 	cfg.RefreshIntervalMinutes = view.RefreshIntervalMinutes
 	cfg.NotifyOnReset = view.NotifyOnReset
+	cfg.NotifyOnAlert = &view.NotifyOnAlert
+	cfg.Theme = view.Theme
+	if len(view.ProviderOrder) > 0 {
+		cfg.ProviderOrder = view.ProviderOrder
+	}
 	cfg.AlertPercentThreshold = view.AlertPercentThreshold
 	cfg.AlertBalanceThreshold = view.AlertBalanceThreshold
 }

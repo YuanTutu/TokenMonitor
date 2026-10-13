@@ -60,8 +60,11 @@ export namespace main {
 	    providers: ProvidersView;
 	    refreshIntervalMinutes: number;
 	    notifyOnReset: boolean;
+	    notifyOnAlert: boolean;
 	    alertPercentThreshold: number;
 	    alertBalanceThreshold: number;
+	    theme: string;
+	    providerOrder: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new ConfigView(source);
@@ -72,8 +75,11 @@ export namespace main {
 	        this.providers = this.convertValues(source["providers"], ProvidersView);
 	        this.refreshIntervalMinutes = source["refreshIntervalMinutes"];
 	        this.notifyOnReset = source["notifyOnReset"];
+	        this.notifyOnAlert = source["notifyOnAlert"];
 	        this.alertPercentThreshold = source["alertPercentThreshold"];
 	        this.alertBalanceThreshold = source["alertBalanceThreshold"];
+	        this.theme = source["theme"];
+	        this.providerOrder = source["providerOrder"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

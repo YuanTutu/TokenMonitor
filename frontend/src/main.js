@@ -25,6 +25,41 @@ function pctColor(pct) {
     return 'green';
 }
 
+// isTerminal 当前是否为终端美学主题
+function isTerminal() {
+    return state.config && state.config.theme === 'terminal';
+}
+
+// setTheme 设置界面主题（'glass' 液态玻璃 / 'terminal' 终端美学）并持久化
+window.setTheme = async function(theme) {
+    const c = state.config;
+    if (c.theme === theme) return;
+    c.theme = theme;
+    await SaveConfig(c);
+    state.config = await LoadConfig();
+    renderConfig(true); // 切主题后重播入场动画，切换感更明显
+    showToast(theme === 'terminal' ? '已切换到终端界面' : '已切换到玻璃界面', 'success');
+};
+
+// renderBarChars 生成终端风格的字符进度条（█ 已用 / ░ 未用）
+function renderBarChars(pct, width = 20) {
+    const filled = Math.max(0, Math.min(width, Math.round(pct / 100 * width)));
+    return '█'.repeat(filled) + '░'.repeat(width - filled);
+}
+
+// providerKeyByName 把 provider 展示名映射回配置 key（用于按 providerOrder 排序）
+function providerKeyByName(name) {
+    const map = {
+        '智谱 GLM': 'glm',
+        '火山方舟': 'ark',
+        'DeepSeek': 'deepseek',
+        'Kimi': 'kimi',
+        'StepFun': 'stepfun',
+        'MiniMax': 'minimax',
+    };
+    return map[name] || name;
+}
+
 // toast 提示
 function showToast(msg, type = '') {
     const el = document.createElement('div');
@@ -74,7 +109,14 @@ function renderDashboard(animate = false) {
     } else if (r && r.error) {
         cardsHtml = `<div class="state-msg">${r.error}</div>`;
     } else if (r && r.results && r.results.length > 0) {
-        cardsHtml = r.results.map(renderCard).join('');
+        // 按配置的 providerOrder 排列卡片（纯展示排序，调整顺序后即时生效无需刷新）
+        const order = state.config?.providerOrder || [];
+        const sorted = [...r.results].sort((a, b) => {
+            const ai = order.indexOf(providerKeyByName(a.providerName));
+            const bi = order.indexOf(providerKeyByName(b.providerName));
+            return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+        });
+        cardsHtml = sorted.map(renderCard).join('');
     } else if (!state.loading) {
         cardsHtml = `<div class="state-msg">暂无数据。请按右上角设置按钮配置 Provider。</div>`;
     }
@@ -91,6 +133,7 @@ function renderDashboard(animate = false) {
 
     // animate=true（视图切换）时容器带 .anim-in 触发入场动画；
     // 数据刷新/交互更新不播动画，避免整页"刷新感"。
+    app.className = isTerminal() ? 'theme-terminal' : '';
     app.innerHTML = `
         <div class="topbar">
             <div class="topbar-left">
@@ -102,6 +145,9 @@ function renderDashboard(animate = false) {
                     r && r.updatedAt ? `最后刷新 ${r.updatedAt}` : ''
                 } · ⏱${state.config ? state.config.refreshIntervalMinutes : 10}min</span>
                 <div class="topbar-actions">
+                    <button class="btn btn-icon" onclick="window.toggleNotifyAlert()" title="告警弹窗开关">${
+                        state.config && state.config.notifyOnAlert ? '🔔' : '🔕'
+                    }</button>
                     <button class="btn btn-primary" onclick="window.refresh()" ${
                         state.loading ? 'disabled' : ''
                     }>刷新</button>
@@ -193,13 +239,18 @@ function renderItem(item) {
         ? `${item.used.toFixed(0)}/${item.limit.toFixed(0)} ${item.unit}`
         : '';
 
+    // 终端主题：字符进度条（█░）；玻璃主题：圆角渐变进度条
+    const barHtml = isTerminal()
+        ? `<span class="bar-chars ${color}">${renderBarChars(pct, 20)}</span>`
+        : `<div class="usage-bar">
+               <div class="usage-bar-fill ${color}" style="width: ${Math.min(pct, 100)}%"></div>
+           </div>`;
+
     return `
         <div class="usage-item">
             <span class="usage-label">${item.label}</span>
             <div class="usage-bar-wrap">
-                <div class="usage-bar">
-                    <div class="usage-bar-fill ${color}" style="width: ${Math.min(pct, 100)}%"></div>
-                </div>
+                ${barHtml}
             </div>
             <div class="usage-value">
                 <span class="usage-percent ${color}">${pct.toFixed(1)}%</span>
@@ -224,16 +275,21 @@ function renderConfig(animate = false) {
     const prevContent = document.querySelector('.content');
     const savedScrollTop = prevContent ? prevContent.scrollTop : 0;
 
-    const providers = [
-        { key: 'glm', name: '智谱 GLM', ...c.providers.glm, credField: 'glm' },
-        { key: 'ark', name: '火山方舟', ...c.providers.ark, credField: 'ark', hasSecret: true },
-        { key: 'deepseek', name: 'DeepSeek', ...c.providers.deepseek, credField: 'deepseek' },
-        { key: 'kimi', name: 'Kimi', ...c.providers.kimi, credField: 'kimi' },
-        { key: 'stepfun', name: 'StepFun', ...c.providers.stepfun, credField: 'stepfun' },
-        { key: 'minimax', name: 'MiniMax', ...c.providers.minimax, credField: 'minimax' },
-    ];
+    // provider 定义表（key → 展示信息），按 c.providerOrder 排列展示
+    const providerDefs = {
+        glm:      { key: 'glm', name: '智谱 GLM', credField: 'glm' },
+        ark:      { key: 'ark', name: '火山方舟', credField: 'ark', hasSecret: true },
+        deepseek: { key: 'deepseek', name: 'DeepSeek', credField: 'deepseek' },
+        kimi:     { key: 'kimi', name: 'Kimi', credField: 'kimi' },
+        stepfun:  { key: 'stepfun', name: 'StepFun', credField: 'stepfun' },
+        minimax:  { key: 'minimax', name: 'MiniMax', credField: 'minimax' },
+    };
+    const order = c.providerOrder && c.providerOrder.length ? c.providerOrder : Object.keys(providerDefs);
+    const providers = order
+        .filter(k => providerDefs[k])
+        .map(k => ({ ...providerDefs[k], ...c.providers[k] }));
 
-    const providerRows = providers.map(p => {
+    const providerRows = providers.map((p, idx) => {
         const statusBadge = !p.hasKey
             ? '<span class="badge badge-warn">未配置</span>'
             : (p.enabled
@@ -253,9 +309,16 @@ function renderConfig(animate = false) {
             `;
         }
 
+        // 排序按钮：首行禁用上移，末行禁用下移
+        const sortButtons = `
+            <button class="btn btn-sm btn-icon" onclick="window.moveProvider('${p.key}', -1)" ${idx === 0 ? 'disabled' : ''} title="上移">↑</button>
+            <button class="btn btn-sm btn-icon" onclick="window.moveProvider('${p.key}', 1)" ${idx === providers.length - 1 ? 'disabled' : ''} title="下移">↓</button>
+        `;
+
         return `
             <div class="config-row">
                 <div class="config-row-left">
+                    ${sortButtons}
                     <div class="toggle ${p.enabled ? 'on' : ''}" onclick="window.toggleProvider('${p.key}')"></div>
                     <span class="config-row-label">${p.name}</span>
                     ${statusBadge}
@@ -268,6 +331,7 @@ function renderConfig(animate = false) {
         `;
     }).join('');
 
+    document.getElementById('app').className = isTerminal() ? 'theme-terminal' : '';
     document.getElementById('app').innerHTML = `
         <div class="topbar">
             <div class="topbar-left">
@@ -285,6 +349,7 @@ function renderConfig(animate = false) {
             <div class="content-inner">
                 <div class="config-section">
                     <div class="config-section-title">Provider 凭据</div>
+                    <div class="config-section-hint">↑↓ 调整卡片顺序，主面板立即生效</div>
                     ${providerRows}
                 </div>
 
@@ -306,6 +371,15 @@ function renderConfig(animate = false) {
                         </div>
                         <div class="config-row-right">
                             <div class="toggle ${c.notifyOnReset ? 'on' : ''}" onclick="window.toggleNotifyReset()"></div>
+                        </div>
+                    </div>
+                    <div class="config-row">
+                        <div class="config-row-left">
+                            <span class="config-row-label">界面主题</span>
+                        </div>
+                        <div class="config-row-right">
+                            <button class="btn btn-sm ${c.theme !== 'terminal' ? 'btn-primary' : ''}" onclick="window.setTheme('glass')">液态玻璃</button>
+                            <button class="btn btn-sm ${c.theme === 'terminal' ? 'btn-primary' : ''}" onclick="window.setTheme('terminal')">终端</button>
                         </div>
                     </div>
                 </div>
@@ -426,6 +500,20 @@ window.toggleProvider = async function(key) {
     showToast(`${c.providers[key].enabled ? '已启用' : '已停用'}`, 'success');
 };
 
+// moveProvider 上移/下移 provider 展示顺序（delta: -1 上移, +1 下移）
+window.moveProvider = async function(key, delta) {
+    const c = state.config;
+    const order = [...(c.providerOrder || [])];
+    const idx = order.indexOf(key);
+    const target = idx + delta;
+    if (idx < 0 || target < 0 || target >= order.length) return;
+    [order[idx], order[target]] = [order[target], order[idx]];
+    c.providerOrder = order;
+    await SaveConfig(c);
+    state.config = await LoadConfig();
+    renderConfig();
+};
+
 window.editKey = function(credField) {
     showEditKeyModal(credField);
 };
@@ -466,6 +554,20 @@ window.toggleNotifyReset = async function() {
     await SaveConfig(c);
     state.config = await LoadConfig();
     renderConfig();
+};
+
+window.toggleNotifyAlert = async function() {
+    const c = state.config;
+    c.notifyOnAlert = !c.notifyOnAlert;
+    await SaveConfig(c);
+    state.config = await LoadConfig();
+    // 开关位于首页顶栏，切换后重渲染当前视图（不播动画，只换图标）
+    if (state.view === 'config') {
+        renderConfig();
+    } else {
+        renderDashboard();
+    }
+    showToast(c.notifyOnAlert ? '告警弹窗已开启' : '告警弹窗已关闭', 'success');
 };
 
 window.adjustPctThreshold = async function(delta) {
