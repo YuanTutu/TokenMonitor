@@ -1,0 +1,15 @@
+name: schedule-probe
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # 探针：验证老仓库的定时触发是否正常
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: date -u
